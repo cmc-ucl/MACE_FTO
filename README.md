@@ -65,3 +65,6 @@ It should be automatic with .jupytext.toml
 	3.	Open Command Palette (Ctrl+Shift+P or Cmd+Shift+P on Mac).
 	4.	Search for “Jupytext: Pair Notebook with percent Script”.
 	5.	A file MyNotebook.py appears next to it.
+
+### Committing
+There is an error message when you commit the nb. Just click ok and then restage the notebooks and this second time it works. This is because the first time you try to committ is changes the nbs, so it looks like there are unstaged changes.
