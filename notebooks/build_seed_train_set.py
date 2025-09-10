@@ -68,7 +68,9 @@ import copy
 import numpy as np
 import pandas as pd
 from scipy.constants import physical_constants
-
+HARTREE_TO_EV = physical_constants['Hartree energy in eV'][0]
+BOHR_TO_ANGSTROM = physical_constants['Bohr radius'][0] * 1e10  # Convert meters to Ångstrom
+BOHR_CUBED_TO_ANGSTROM_CUBED = BOHR_TO_ANGSTROM**3
 
 import os
 import json
@@ -134,6 +136,8 @@ atom_indices_aln = np.genfromtxt('../data/symmetry/aln_333_indices.csv',delimite
 
 # %% [markdown]
 # ## Generate SIC random structures
+#
+# This saves the data into a json file, I'm not sure we need it.
 
 # %%
 active_sites=np.where(np.array(AlN_333_r2scan.atomic_numbers) == 13)[0]
@@ -159,12 +163,6 @@ for n,N_atoms in enumerate(np.arange(27,28)):
 #     json.dump(all_config_atom_number, json_file)
 
 # %%
-all_config_atom_number
-
-# %%
-vview(structures_random[0])
-
-# %%
 with open('data/supercell_structures/AlGaN/AlGaN_super3.json', 'r', encoding='utf-8') as json_file:
     AlGaN_super3_all_config = json.load(json_file)
 
@@ -172,8 +170,8 @@ with open('data/supercell_structures/AlGaN/AlGaN_super3.json', 'r', encoding='ut
 # %%
 # Generate the Extended XYZ files
 
-lattice = AlN_super3.lattice.matrix
-positions = AlN_super3.frac_coords
+lattice = AlN_333_r2scan.lattice.matrix
+positions = AlN_333_r2scan.frac_coords
 for N_atoms in AlGaN_super3_all_config.keys():
     
     folder_name = f'data/supercell_structures/AlGaN/AlGaN_super3_{N_atoms}'
@@ -185,42 +183,8 @@ for N_atoms in AlGaN_super3_all_config.keys():
 
         write_extended_xyz(structure,os.path.join(folder_name,f'AlGaN_super3_{N_atoms}_{i}.xyz'))
 
-
 # %% [markdown]
-# ### Write CRYSTAL input files
-
-# %%
-def generate_slurm_file(file_names_list, project_code='e05-algor-smw'):
-
-    bash_script = [
-    '#!/bin/bash\n',
-    f'#SBATCH --nodes={len(file_names_list)}\n',
-    '#SBATCH --ntasks-per-node=128\n',
-    '#SBATCH --cpus-per-task=1\n',
-    '#SBATCH --time=24:00:00\n\n',
-    '# Replace [budget code] below with your full project code\n',
-    f'#SBATCH --account={project_code}\n',
-    '#SBATCH --partition=standard\n',
-    '#SBATCH --qos=standard\n',
-    '#SBATCH --export=none\n\n',
-    'module load epcc-job-env\n',
-    'module load other-software\n',
-    'module load crystal\n\n',
-    '# Address the memory leak\n',
-    'export FI_MR_CACHE_MAX_COUNT=0\n',
-    'export SLURM_CPU_FREQ_REQ=2250000\n\n',
-    '# Run calculations\n'
-]
-
-    for file in file_names_list:
-        bash_script.append(f'timeout 1430m /work/e05/e05/bcamino/runCRYSTAL/Pcry_slurm_multi {file[:-4]} &\n')
-
-    bash_script.append('wait')
-
-    return bash_script
-    
-
-
+# ## Write CRYSTAL input files
 
 # %%
 AlN_lattice_matrix = np.round(AlN_super3.lattice.matrix[0:3], 6)
@@ -282,198 +246,20 @@ for folder in folders:
 # %%
 
 # %% [markdown]
-# ### Read CRYSTAL output files
+# ## Read CRYSTAL output files
 
 # %%
 with open('data/crystal/AlGaN/super3/output_files/AlGaN_super3_1_0_0.out', 'r') as f:
     file_content = f.readlines()
 
-
-# %%
-def lattice_params_to_matrix(a, b, c, alpha, beta, gamma):
-    """
-    Convert lattice parameters to a 3x3 lattice matrix.
-
-    Parameters:
-        a, b, c (float): Lattice constants.
-        alpha, beta, gamma (float): Angles (in degrees) between the lattice vectors.
-
-    Returns:
-        numpy.ndarray: 3x3 lattice matrix.
-    """
-    # Convert angles from degrees to radians
-    alpha_rad = np.radians(alpha)
-    beta_rad = np.radians(beta)
-    gamma_rad = np.radians(gamma)
-
-    # Compute the lattice vectors
-    v_x = a
-    v_y = b * np.cos(gamma_rad)
-    v_z = c * np.cos(beta_rad)
-
-    w_y = b * np.sin(gamma_rad)
-    w_z = c * (np.cos(alpha_rad) - np.cos(beta_rad) * np.cos(gamma_rad)) / np.sin(gamma_rad)
-
-    u_z = np.sqrt(c**2 - v_z**2 - w_z**2)
-
-    # Assemble the lattice matrix
-    lattice_matrix = np.array([
-        [v_x, 0, 0],
-        [v_y, w_y, 0],
-        [v_z, w_z, u_z],
-    ])
-
-    return lattice_matrix
-
-
-# %%
-# Conversion factors
-HARTREE_TO_EV = physical_constants['Hartree energy in eV'][0]
-BOHR_TO_ANGSTROM = physical_constants['Bohr radius'][0] * 1e10  # Convert meters to Ångstrom
-BOHR_CUBED_TO_ANGSTROM_CUBED = BOHR_TO_ANGSTROM**3
-
-def parse_extended_xyz(file_content, num_atoms):
-    """
-    Parse the file to extract structures and convert lattice parameters, coordinates, energy, forces,
-    and stress tensor to standard units (e.g., eV, Å).
-    """
-    def extract_floats(line):
-        """Helper function to extract floats from a string."""
-        return list(map(float, re.findall(r"[-+]?\d*\.\d+(?:[Ee][-+]?\d+)?", line)))
-
-    results = []
-    structure_data = {}
-
-    for i, line in enumerate(file_content):
-        line = line.strip()
-
-        # Lattice parameters
-        if "ATOM                 X/A                 Y/B                 Z/C" in line:
-            lattice_params = extract_floats(file_content[i - 3])
-            if len(lattice_params) == 6:
-                a, b, c, alpha, beta, gamma = lattice_params
-                structure_data['lattice_matrix'] = lattice_params_to_matrix(a, b, c, alpha, beta, gamma)
-
-        # Fractional coordinates and atomic symbols
-        if "ATOM                 X/A                 Y/B                 Z/C" in line:
-            start = i + 2
-            fractional_coords = []
-            atomic_symbols = []
-            for j in range(num_atoms):
-                coord_line = file_content[start + j].strip()
-                parts = coord_line.split()
-                atomic_number = int(parts[2])  # Third element is the atomic number
-                atomic_symbols.append(chemical_symbols[atomic_number])  # Convert to symbol
-                fractional_coords.append(extract_floats(coord_line))
-
-            structure_data['fractional_coordinates'] = fractional_coords
-            structure_data['atomic_symbols'] = atomic_symbols
-
-            # Calculate Cartesian coordinates
-            lattice_matrix = structure_data['lattice_matrix']
-            structure_data['cartesian_coordinates'] = [
-                np.dot(coord, lattice_matrix) for coord in fractional_coords
-            ]
-
-        # Energy
-        if "== SCF ENDED - CONVERGENCE ON ENERGY      E(AU)" in line:
-            energy_hartree = extract_floats(line)[0]
-            structure_data['energy_ev'] = energy_hartree * HARTREE_TO_EV
-
-        # Forces
-        if "CARTESIAN FORCES IN HARTREE/BOHR (ANALYTICAL)" in line:
-            start = i + 2
-            structure_data['forces'] = [
-                extract_floats(file_content[start + j])
-                for j in range(num_atoms)
-            ]
-
-        # Stress tensor
-        if "STRESS TENSOR, IN HARTREE/BOHR^3:" in line:
-            start = i + 4
-            stress_hartree_bohr3 = [
-                extract_floats(file_content[start + j]) for j in range(3)
-            ]
-            stress_ev_angstrom3 = np.array(stress_hartree_bohr3) * (HARTREE_TO_EV / BOHR_CUBED_TO_ANGSTROM_CUBED)
-            structure_data['stress'] = stress_ev_angstrom3.tolist()
-
-        # Store the structure if all required fields are found
-        if all(key in structure_data for key in ['lattice_matrix', 'fractional_coordinates', 'cartesian_coordinates', 'energy_ev', 'forces', 'stress', 'atomic_symbols']):
-            results.append(structure_data.copy())
-            structure_data = {}  # Reset for the next structure
-
-    return results
-
-
-# %%
-def generate_extended_xyz_files_from_df(df, seed_name, start_index):
-    """
-    Generate extended XYZ files from a DataFrame containing structure data in ASE extended format.
-
-    Parameters:
-        df (pd.DataFrame): DataFrame containing columns:
-            - 'cartesian_coordinates': List of Cartesian coordinates.
-            - 'atomic_symbols': List of atomic symbols.
-            - 'energy_ev': Energy in eV.
-            - 'forces': List of forces for each atom.
-            - 'stress': Stress tensor for the structure.
-            - 'lattice_matrix': Lattice matrix.
-        seed_name (str): Base name for output files.
-        start_index (int): Starting index for numbering the output files.
-
-    Returns:
-        int: Updated index after processing all structures.
-    """
-    index = start_index
-    for _, row in df.iterrows():
-        # Filename with incrementing index
-        filename = f"{seed_name}_{index}.xyz"
-
-        # Extract data
-        cartesian_coords = row['cartesian_coordinates']
-        atomic_symbols = row['atomic_symbols']
-        energy = row['energy_ev']
-        forces = row['forces']
-        stress = row['stress']
-        lattice_matrix = row['lattice_matrix']
-        num_atoms = len(cartesian_coords)
-
-        # Generate content
-        content = []
-        # First line: Number of atoms
-        content.append(str(num_atoms))
-        # Second line: Metadata (energy, lattice matrix, stress tensor, properties, config type)
-        lattice_flat = " ".join(f"{value:.12e}" for row in lattice_matrix for value in row)
-        stress_flat = " ".join(f"{value:.12e}" for row in stress for value in row)
-        content.append(
-            f'Energy={energy:.12e} '
-            f'Lattice="{lattice_flat}" '
-            f'Stress="{stress_flat}" '
-            f'Properties=species:S:1:pos:R:3:forces:R:3 '
-            f'Config_type={filename}'
-        )
-        # Atom lines with forces
-        for atomic_symbol, atom, force in zip(atomic_symbols, cartesian_coords, forces):
-            content.append(
-                f"{atomic_symbol} {atom[0]:.12e} {atom[1]:.12e} {atom[2]:.12e} "
-                f"{force[0]:.12e} {force[1]:.12e} {force[2]:.12e}"
-            )
-
-        # Write to file
-        with open(filename, 'w') as file:
-            file.write("\n".join(content) + "\n")
-
-        # Increment index
-        index += 1
-
-    return index
-
+# %% [markdown]
+# Example usage
 
 # %%
 
 # num_atoms = 108  
 # # Parse the file and extract structures with lattice matrix conversion
-# parsed_structures = parse_extended_xyz(file_content, num_atoms)
+# parsed_structures = parse_crystal_output(file_content, num_atoms)
 
 # # Convert to DataFrame for inspection
 # df_structures = pd.DataFrame(parsed_structures)
@@ -518,7 +304,7 @@ for X in np.arange(54):  # Adjust the range as needed
                 file_content = f.readlines()
 
             # Parse the file content
-            parsed_structures = parse_extended_xyz(file_content, num_atoms=108)  # Replace 108 with your atom count
+            parsed_structures = parse_crystal_output(file_content, num_atoms=108)  # Replace 108 with your atom count
 
             # Convert parsed structures to a DataFrame
             df_structures = pd.DataFrame(parsed_structures)
@@ -566,54 +352,6 @@ for X in np.arange(54):  # Adjust the range as needed
 # Check for dusplicates
 
 # %%
-import os
-import hashlib
-
-def calculate_file_hash(file_path, hash_algo="md5"):
-    """
-    Calculate the hash of a file using the specified algorithm.
-    
-    Parameters:
-        file_path (str): Path to the file.
-        hash_algo (str): Hash algorithm to use (default: "md5").
-    
-    Returns:
-        str: Hexadecimal hash of the file content.
-    """
-    hash_func = hashlib.new(hash_algo)
-    with open(file_path, 'rb') as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hash_func.update(chunk)
-    return hash_func.hexdigest()
-
-def find_duplicate_files(folder_path, pattern_prefix):
-    """
-    Find duplicate files in a folder for a given pattern prefix.
-    
-    Parameters:
-        folder_path (str): Path to the folder containing files.
-        pattern_prefix (str): Prefix pattern for filtering files (e.g., "AlGaN_super3_X_Y_").
-    
-    Returns:
-        list of tuple: List of duplicate file pairs (file1, file2).
-    """
-    # Filter files matching the pattern
-    files = [f for f in os.listdir(folder_path) if f.startswith(pattern_prefix)]
-    file_hashes = {}
-    duplicates = []
-
-    # Calculate hashes for each file
-    for file in files:
-        file_path = os.path.join(folder_path, file)
-        file_hash = calculate_file_hash(file_path)
-        if file_hash in file_hashes:
-            # Found a duplicate
-            duplicates.append((file_hashes[file_hash], file))
-        else:
-            file_hashes[file_hash] = file
-
-    return duplicates
-
 # Folder containing the .out files
 folder_path = "data/crystal/AlGaN/pbe0/extxyz_files/"
 
@@ -634,33 +372,6 @@ else:
 # #### Concatenate files
 
 # %%
-import os
-
-def concatenate_xyz_files(input_folder, output_file):
-    """
-    Concatenate all .xyz files in a folder into a single .xyz file.
-
-    Parameters:
-        input_folder (str): Path to the folder containing .xyz files.
-        output_file (str): Path to the output .xyz file.
-    """
-    # Ensure the output folder exists
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
-
-    with open(output_file, 'w') as outfile:
-        for file_name in sorted(os.listdir(input_folder)):
-            if file_name.endswith(".xyz"):
-                file_path = os.path.join(input_folder, file_name)
-
-                # Read the content of the current .xyz file
-                with open(file_path, 'r') as infile:
-                    content = infile.read()
-                
-                # Append content to the output file
-                outfile.write(content)
-
-    print(f"All .xyz files in '{input_folder}' have been concatenated into '{output_file}'.")
-
 # Example usage
 input_folder = "data/crystal/AlGaN/pbe0/extxyz_files"
 output_file = "data/crystal/AlGaN/pbe0/concatenated_files/AlGaN_super3_all.xyz"
@@ -733,39 +444,3 @@ stress_test = stress_array[test_indices]
 print(f"Total structures: {n_samples}")
 print(f"Training set: {len(atoms_train)} structures")
 print(f"Testing set: {len(atoms_test)} structures")
-
-
-# %% [markdown]
-# ## mace geometry optimisation
-
-# %%
-def mace_geom_opt(atoms):
-
-    atoms_sp = SinglePoint(
-        struct=atoms.copy(),
-        arch="mace_mp",
-        device='cpu',
-        calc_kwargs={'model_paths':'small','default_dtype':'float64'},
-    )
-
-    atoms_opt = GeomOpt(
-        struct=atoms_sp.struct,
-        fmax=0.001,
-    )
-
-    atoms_opt.run()
-
-    return atoms_opt
-
-
-# %%
-np.round(sAlN_super3_mace_opt.struct.positions[0:],6)
-
-
-# %%
-mgo = Structure.from_file('data/test/MgO_mp-1265_computed.cif')
-from pymatgen.io.xyz import XYZ
-XYZ(mgo).write_file('data/test/mgo.xyz')
-
-# %%
-mgo.lattice.matrix
