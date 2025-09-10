@@ -28,6 +28,32 @@
 # # Build the seed train and test sets
 #
 
+# %% [markdown]
+# #### Families
+#
+# Initial seed name:
+#
+# AlGaN_333_K_F_e_r
+#
+# K = composition
+# F = family
+# e = expansion
+# r = randomised displacements
+#
+# Folder structure:
+#
+# supercell_size
+#     |
+#     -- functional
+#         |
+#         -- family
+#             |
+#             -- optgeom
+#             -- expansion
+#             -- random dispalcements
+#
+# So we can select the F using random split and then select a subset of structures within that group.
+
 # %%
 # %load_ext autoreload
 # %reload_ext autoreload
@@ -61,53 +87,65 @@ from crystal_helper_functions import *
 current_dir = os.path.dirname(os.path.abspath("__file__"))
 sys.path.append(current_dir)
 
+def vview(structure):
+    from ase.visualize import view
+    from pymatgen.io.ase import AseAtomsAdaptor
+    
+    view(AseAtomsAdaptor().get_atoms(structure))
+
 
 # %% [markdown]
 # ### AlGaN - OPTIMISE STRUCTURES WITH CRYSTAL23
 
 # %%
-AlN_bulk_crystal = Structure.from_file('../data/bulk_structures/AlN.cif')
+AlN_bulk_r2scan = Structure.from_file('../data/bulk_structures/AlN.cif')
 
 supercell_matrix = np.eye(3)*3
 
-AlN_333 = copy.deepcopy(AlN_bulk_crystal)
+AlN_333_r2scan = copy.deepcopy(AlN_bulk_r2scan)
 
-AlN_333.make_supercell(supercell_matrix)
+AlN_333_r2scan.make_supercell(supercell_matrix)
 
-AlN_333.num_sites
-
-# %%
-write_CRYSTAL_gui_from_data(AlN_bulk_crystal.lattice.matrix,AlN_bulk_crystal.atomic_numbers,AlN_bulk_crystal.cart_coords,'../data/bulk_structures/crystal/AlN.gui')
+AlN_333_r2scan.num_sites
 
 # %%
-GaN_bulk = Structure.from_file('data/bulk_structures/GaN.cif')
+# write_CRYSTAL_gui_from_data(AlN_bulk_crystal.lattice.matrix,AlN_bulk_crystal.atomic_numbers,AlN_bulk_crystal.cart_coords,'../data/bulk_structures/crystal/AlN.gui')
+
+# %%
+GaN_bulk_r2scan = Structure.from_file('../data/bulk_structures/GaN.cif')
 
 supercell_matrix = np.eye(3)*3
 
-GaN_super3 = copy.deepcopy(GaN_bulk)
+GaN_333_r2scan = copy.deepcopy(GaN_bulk_r2scan)
 
-GaN_super3.make_supercell(supercell_matrix)
+GaN_333_r2scan.make_supercell(supercell_matrix)
 
-GaN_super3.num_sites
+GaN_333_r2scan.num_sites
 
-# %%
-# atom_indices_aln = get_all_configurations_pmg(AlN_super3)
-# np.savetxt('data/symmetry/aln_108_atom_indices.csv',atom_indices_aln,delimiter=',',fmt='%s')
-
-# %%
-atom_indices_aln = np.genfromtxt('data/symmetry/aln_108_atom_indices.csv',delimiter=',').astype('int')
+# %% [markdown]
+# ## Symmetry analysis
 
 # %%
-active_sites=np.where(np.array(AlN_super3.atomic_numbers) == 13)[0]
+atom_indices_aln_333 = get_all_configurations_pmg(AlN_333_r2scan)
+np.savetxt('../data/symmetry/aln_333_indices.csv',atom_indices_aln_333,delimiter=',',fmt='%d')
+
+# %%
+atom_indices_aln = np.genfromtxt('../data/symmetry/aln_333_indices.csv',delimiter=',').astype('int')
+
+# %% [markdown]
+# ## Generate SIC random structures
+
+# %%
+active_sites=np.where(np.array(AlN_333_r2scan.atomic_numbers) == 13)[0]
 num_active_sites=len(active_sites)
 
 N_atom = 31
 
 all_config_atom_number = {}
 
-for n,N_atoms in enumerate(np.arange(1,54)):
+for n,N_atoms in enumerate(np.arange(27,28)):
 
-    structures_random = generate_random_structures(AlN_super3,atom_indices=atom_indices_aln,
+    structures_random = generate_random_structures(AlN_333_r2scan,atom_indices=atom_indices_aln,
                                                    N_atoms=N_atoms,new_species=31,N_config=500,
                                                    DFT_config=20,active_sites=active_sites)
 
@@ -119,6 +157,12 @@ for n,N_atoms in enumerate(np.arange(1,54)):
 
 # with open('data/supercell_structures/AlGaN/AlGaN_super3.json', 'w') as json_file:
 #     json.dump(all_config_atom_number, json_file)
+
+# %%
+all_config_atom_number
+
+# %%
+vview(structures_random[0])
 
 # %%
 with open('data/supercell_structures/AlGaN/AlGaN_super3.json', 'r', encoding='utf-8') as json_file:
