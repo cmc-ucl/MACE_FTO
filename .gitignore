@@ -2,6 +2,9 @@
 data/crystal_input_files/*
 data/seed_structures/333/r2SCAN/*
 
+# MODELS
+models/*
+# Mac stuff
 */__pycache__/
 .DS_Store
 # Byte-compiled / optimized / DLL files
