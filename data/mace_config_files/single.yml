@@ -1,0 +1,4 @@
+device: cpu
+arch: mace_mp
+calc-kwargs:
+model: /Users/brunocamino/Desktop/UCL/MACE_FTO/models/MACE-matpes-r2scan-omat-ft.model
