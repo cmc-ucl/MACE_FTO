@@ -126,4 +126,85 @@ def write_CRYSTAL_gui_from_data(lattice_matrix,atomic_numbers,
             file.write(f"{line}")
 
 
+def write_extxyz_from_CRYSTAL_output(
+    input_path: str,
+    output_path: str | None = None,
+    num_atoms: int = 108,
+    config_type: str = "random",
+    system_name: str | None = None,
+    comment: str | None = None,
+):
+    """
+    Parse a single CRYSTAL output and write a multi-frame extended XYZ (.xyz)
+    containing energies, forces, stresses, and lattice for each parsed structure.
 
+    Parameters
+    ----------
+    input_path : str
+        Path to the CRYSTAL .out file.
+    output_path : str | None
+        Where to write the .xyz. If None, uses input basename with .xyz.
+    num_atoms : int
+        Number of atoms expected in each structure.
+    config_type : str
+        Value for the EXYZ 'config_type' tag in the comment line.
+    system_name : str | None
+        Value for the EXYZ 'system_name' tag. If None, uses input stem.
+    comment : str | None
+        Extra text to append to the EXYZ comment line (second line).
+    """
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+
+    if output_path is None:
+        stem = os.path.splitext(os.path.basename(input_path))[0]
+        output_path = f"{stem}.xyz"
+
+    if system_name is None:
+        system_name = os.path.splitext(os.path.basename(output_path))[0]
+
+    # Read & parse
+    with open(input_path, "r") as f:
+        file_content = f.readlines()
+
+    structures = parse_crystal_output(file_content, num_atoms=num_atoms)
+    if not structures:
+        raise ValueError(f"No structures parsed from: {input_path}")
+
+    with open(output_path, "w") as out_f:
+        for row in structures:
+            N = len(row["cartesian_coordinates"])
+            if N != num_atoms:
+                raise ValueError(f"Parsed atom count {N} != expected {num_atoms}")
+
+            out_f.write(f"{N}\n")
+
+            # Flatten lattice and stress
+            lattice_flat = " ".join(f"{v:.12e}" for v in np.array(row["lattice_matrix"]).flatten())
+            stress_arr = np.array(row["stress"])
+            stress_flat = " ".join(f"{v:.12e}" for v in stress_arr.flatten())
+
+            # Build metadata line
+            metadata = (
+                f"dft_energy={row['energy_ev']:.12e} "
+                f'Lattice="{lattice_flat}" '
+                f'dft_stress="{stress_flat}" '
+                f'Properties=species:S:1:pos:R:3:dft_forces:R:3 '
+                f"config_type={config_type} "
+                f"system_name={system_name}"
+            )
+            if comment:  # append user-provided comment
+                metadata += " " + comment
+
+            out_f.write(metadata + "\n")
+
+            # Atom lines
+            for sym, pos, frc in zip(
+                row["atomic_symbols"], row["cartesian_coordinates"], row["forces"]
+            ):
+                out_f.write(
+                    f"{sym} {pos[0]:.12e} {pos[1]:.12e} {pos[2]:.12e} "
+                    f"{frc[0]:.12e} {frc[1]:.12e} {frc[2]:.12e}\n"
+                )
+
+    return output_path
