@@ -202,6 +202,32 @@ for N_atoms in AlGaN_super3_all_config.keys():
                            comment='initial=True md=False eos=False opt=False')
 
 # %% [markdown]
+# ### Concatenate files
+
+# %%
+# Ensure the output folder exists
+output_file = '../data/seed_structures/333/r2SCAN/concatenated_files/initial/AlGaN_333_KX_FX_e0_md0_o0.xyz'
+
+os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+with open(output_file, 'w') as outfile:
+    for comp in compositions:
+        N_Ga = int(np.round(num_active_sites*comp)) 
+        for f in range(num_families):
+            file_path = f'../data/seed_structures/333/r2SCAN/{N_Ga}Ga/initial/AlGaN_333_K{N_Ga}_F{f}_e0_md0_o0.xyz'
+        # for file_name in sorted(os.listdir(input_folder)):
+        #     if file_name.endswith(".xyz"):
+        #         file_path = os.path.join(input_folder, file_name)
+
+            # Read the content of the current .xyz file
+            with open(file_path, 'r') as infile:
+                content = infile.read()
+            
+            # Append content to the output file
+            outfile.write(content)
+
+
+# %% [markdown]
 # ## Geometry optimisation
 
 # %%
@@ -210,56 +236,44 @@ structure = AseAtomsAdaptor().get_structure(atoms)
 
 
 # %%
-from structure_generation import write_CRYSTAL_gui_from_data
-
+files = []
+max_family = 4
 for comp in compositions:
+    N_Ga = int(np.round(num_active_sites*comp)) 
     for f in range(num_families):
-        
-        for i,config in enumerate(AlGaN_super3_all_config[N_atoms]):
+        atoms = read(f'../data/seed_structures/333/r2SCAN/{N_Ga}Ga/initial/AlGaN_333_K{N_Ga}_F{f}_e0_md0_o0.xyz')
+        structure = AseAtomsAdaptor().get_structure(atoms)
 
-            atomic_numbers = config
+        folder_name = f'../data/seed_structures/333/r2SCAN/{N_Ga}Ga/optgeom/'
+        file_name = f'AlGaN_333_K{N_Ga}_F{f}_e0_md0_o1.gui'
+        full_name = os.path.join(folder_name,file_name)
+        if f <= max_family:
+            files.append(full_name)
+        sh.copy('../data/crystal_input_files/fulloptg_r2scan_input.d12',
+                full_name[:-3]+'d12')
+        if not os.path.exists(folder_name):
+            os.makedirs(folder_name)
+        lattice_matrix = structure.lattice.matrix
+        atomic_numbers = structure.atomic_numbers
+        cart_coords = structure.cart_coords
 
-            folder_name = f'data/crystal/AlGaN/super3/config_{i}/'
-            file_name = f'AlGaN_super3_{N_atoms}_{i}_0.gui'
-            full_name = os.path.join(folder_name,file_name)
-            if not os.path.exists(folder_name):
-                os.makedirs(folder_name)
-            
-            for i,config in enumerate(AlGaN_super3_all_config[N_atoms]):
-                structure = Structure(lattice_matrix,config,cart_coords)
+        write_CRYSTAL_gui_from_data(lattice_matrix,atomic_numbers,
+                                cart_coords, full_name, dimensionality = 3)
+bash_script = generate_slurm_file(files)
 
-                write_CRYSTAL_gui_from_data(lattice_matrix,atomic_numbers,
-                                    cart_coords, full_name, dimensionality = 3)
-
-
-# %%
-folder_path = 'data/crystal/AlGaN/super3/'
-
-folders = [name for name in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, name))]
-
-for folder in folders:
-
-    folder_path_new = os.path.join(folder_path,folder)
-    slurm_file_name = os.path.join(folder_path_new,f'{folder}_0.slurm')
-    files = [name for name in os.listdir(folder_path_new) 
-         if os.path.isfile(os.path.join(folder_path_new, name)) and name.endswith('.gui')]
-
-    # copy .d12
-    for file in files:
-        input_file = os.path.join(folder_path_new,f'{file[:-4]}.d12')
-        sh.copy('data/crystal/AlGaN/super3/super3_input.d12', input_file)
-
-    bash_script = generate_slurm_file(files)
-    with open(slurm_file_name, 'w') as file:
-        for line in bash_script:
-            file.write(f"{line}")
-
-
-
-# %%
 
 # %% [markdown]
-# ## Read CRYSTAL output files
+# ### Read CRYSTAL output files
+
+# %%
+out_xyz = write_extxyz_from_crystal_output(
+    "AlGaN_super3_12_7_0.out",
+    output_path="AlGaN_super3_12_7_0.xyz",
+    num_atoms=108,
+    config_type="geometry_optimisation",
+    system_name="AlGaN_super3_12_7",
+    comment="this=3 that=4"
+)
 
 # %%
 with open('data/crystal/AlGaN/super3/output_files/AlGaN_super3_1_0_0.out', 'r') as f:
