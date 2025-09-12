@@ -33,24 +33,29 @@
 #
 # Initial seed name:
 #
-# AlGaN_333_K_F_e_r
+# AlGaN_333_K_F_e_md_o
 #
 # K = composition
-# F = family
-# e = expansion
-# r = randomised displacements
+# F = family (0-19)
+# e = eos (0-11)
+# md = MD
+# o = optimisation
 #
 # Folder structure:
 #
 # supercell_size
 #     |
-#     -- functional
+#     -- functional r2SCAN
 #         |
-#         -- family
+#         composition 7 (0,0.1,0.25,0.5,0.75,0.9,1) -> 0,5,14,27,40,49,54 Ga atoms
 #             |
-#             -- optgeom
-#             -- expansion
-#             -- random dispalcements
+#             -- family (configuration) generate 20 - use 5
+#                 |
+#                 -- initial - this contains the initial structure
+#                 -- MD 1000 steps - select ~10
+#                 -- EOS (from optimised?) select N structures from the MD ones and do 10 steps 
+#                 -- optgeom (starting from MACE optimised and save) all steps - use 1?
+#
 #
 # So we can select the F using random split and then select a subset of structures within that group.
 
@@ -97,38 +102,35 @@ def vview(structure):
 
 
 # %% [markdown]
-# ### AlGaN - OPTIMISE STRUCTURES WITH CRYSTAL23
+# ### AlN and GaN experimental structures
 
 # %%
-AlN_bulk_r2scan = Structure.from_file('../data/bulk_structures/AlN.cif')
+AlN_exp = Structure.from_file('../data/bulk_structures/experimental/AlN_experimental.cif')
 
 supercell_matrix = np.eye(3)*3
 
-AlN_333_r2scan = copy.deepcopy(AlN_bulk_r2scan)
+AlN_333_exp = copy.deepcopy(AlN_exp)
 
-AlN_333_r2scan.make_supercell(supercell_matrix)
+AlN_333_exp.make_supercell(supercell_matrix)
 
-AlN_333_r2scan.num_sites
-
-# %%
-# write_CRYSTAL_gui_from_data(AlN_bulk_crystal.lattice.matrix,AlN_bulk_crystal.atomic_numbers,AlN_bulk_crystal.cart_coords,'../data/bulk_structures/crystal/AlN.gui')
+AlN_333_exp.num_sites
 
 # %%
-GaN_bulk_r2scan = Structure.from_file('../data/bulk_structures/GaN.cif')
+GaN_exp = Structure.from_file('../data/bulk_structures/experimental/GaN_experimental.cif')
 
 supercell_matrix = np.eye(3)*3
 
-GaN_333_r2scan = copy.deepcopy(GaN_bulk_r2scan)
+GaN_333_exp = copy.deepcopy(GaN_exp)
 
-GaN_333_r2scan.make_supercell(supercell_matrix)
+GaN_333_exp.make_supercell(supercell_matrix)
 
-GaN_333_r2scan.num_sites
+GaN_333_exp.num_sites
 
 # %% [markdown]
 # ## Symmetry analysis
 
 # %%
-atom_indices_aln_333 = get_all_configurations_pmg(AlN_333_r2scan)
+atom_indices_aln_333 = get_all_configurations_pmg(AlN_333_exp)
 np.savetxt('../data/symmetry/aln_333_indices.csv',atom_indices_aln_333,delimiter=',',fmt='%d')
 
 # %%
@@ -140,83 +142,94 @@ atom_indices_aln = np.genfromtxt('../data/symmetry/aln_333_indices.csv',delimite
 # This saves the data into a json file, I'm not sure we need it.
 
 # %%
-active_sites=np.where(np.array(AlN_333_r2scan.atomic_numbers) == 13)[0]
+active_sites=np.where(np.array(AlN_333_exp.atomic_numbers) == 13)[0]
 num_active_sites=len(active_sites)
 
 N_atom = 31
-
+num_families = 20
 all_config_atom_number = {}
+compositions = [0.1,0.25,0.5,0.75,0.9]
+for n,comp in enumerate(compositions):
+   
+    N_Ga = int(np.round(num_active_sites*comp))
 
-for n,N_atoms in enumerate(np.arange(27,28)):
-
-    structures_random = generate_random_structures(AlN_333_r2scan,atom_indices=atom_indices_aln,
-                                                   N_atoms=N_atoms,new_species=31,N_config=500,
-                                                   DFT_config=20,active_sites=active_sites)
+    structures_random = generate_random_structures(AlN_333_exp,atom_indices=atom_indices_aln,
+                                                   N_atoms=N_Ga,new_species=31,N_config=500,
+                                                   DFT_config=num_families,active_sites=active_sites)
 
     atom_number_tmp = []
     for structure in structures_random:
         atom_number_tmp.append(list(structure.atomic_numbers))
 
-    all_config_atom_number[str(N_atoms)] = atom_number_tmp
+    all_config_atom_number[str(N_Ga)] = atom_number_tmp
 
-# with open('data/supercell_structures/AlGaN/AlGaN_super3.json', 'w') as json_file:
-#     json.dump(all_config_atom_number, json_file)
+with open('../data/seed_structures/333/AlGaN_super3.json', 'w') as json_file:
+    json.dump(all_config_atom_number, json_file)
 
 # %%
-with open('data/supercell_structures/AlGaN/AlGaN_super3.json', 'r', encoding='utf-8') as json_file:
+with open('../data/seed_structures/333/AlGaN_super3.json', 'r', encoding='utf-8') as json_file:
     AlGaN_super3_all_config = json.load(json_file)
 
 
 # %%
-# Generate the Extended XYZ files
+len(AlGaN_super3_all_config['5'])
 
-lattice = AlN_333_r2scan.lattice.matrix
-positions = AlN_333_r2scan.frac_coords
+# %%
+# Generate the Extended XYZ files
+AlN_lattice_matrix = np.round(AlN_exp.lattice.matrix[0:3], 6)
+GaN_lattice_matrix = np.round(GaN_exp.lattice.matrix[0:3], 6)
+
+# %%
+# Generate the Extended XYZ files
+AlN_lattice_matrix = np.round(AlN_333_exp.lattice.matrix[0:3], 6)
+GaN_lattice_matrix = np.round(GaN_333_exp.lattice.matrix[0:3], 6)
+
+
+positions = AlN_333_exp.frac_coords
 for N_atoms in AlGaN_super3_all_config.keys():
-    
-    folder_name = f'data/supercell_structures/AlGaN/AlGaN_super3_{N_atoms}'
+
+    Ga_comp = int(N_atoms)/num_active_sites
+    AlGaN_lattice_matrix = (AlN_lattice_matrix*(1-Ga_comp) + GaN_lattice_matrix*Ga_comp)
+
+    folder_name = f'../data/seed_structures/333/r2SCAN/{N_atoms}Ga/initial/'
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
     
     for i,config in enumerate(AlGaN_super3_all_config[N_atoms]):
-        structure = Structure(lattice,config,positions)
+        structure = Structure(AlGaN_lattice_matrix,config,positions) # here we use the AlN positions
 
-        write_extended_xyz(structure,os.path.join(folder_name,f'AlGaN_super3_{N_atoms}_{i}.xyz'))
+        write_extended_xyz(structure,os.path.join(folder_name,f'AlGaN_333_K{N_atoms}_F{i}_e0_md0_o0.xyz'),
+                           comment='initial=True md=False eos=False opt=False')
 
 # %% [markdown]
-# ## Write CRYSTAL input files
+# ## Geometry optimisation
 
 # %%
-AlN_lattice_matrix = np.round(AlN_super3.lattice.matrix[0:3], 6)
-GaN_lattice_matrix = np.round(GaN_super3.lattice.matrix[0:3], 6)
+atoms = read('../data/seed_structures/333/r2SCAN/5Ga/initial/AlGaN_333_K5_F0_e0_md0_o0.xyz')
+structure = AseAtomsAdaptor().get_structure(atoms)
 
-AlGaN_lattice_matrix = (AlN_lattice_matrix + GaN_lattice_matrix)/2
 
 # %%
 from structure_generation import write_CRYSTAL_gui_from_data
 
-
-lattice_matrix = AlGaN_lattice_matrix
-cart_coords = np.round(AlN_super3.cart_coords,8)
-
-
-for N_atoms in AlGaN_super3_all_config.keys():
-    
-    for i,config in enumerate(AlGaN_super3_all_config[N_atoms]):
-
-        atomic_numbers = config
-
-        folder_name = f'data/crystal/AlGaN/super3/config_{i}/'
-        file_name = f'AlGaN_super3_{N_atoms}_{i}_0.gui'
-        full_name = os.path.join(folder_name,file_name)
-        if not os.path.exists(folder_name):
-            os.makedirs(folder_name)
+for comp in compositions:
+    for f in range(num_families):
         
         for i,config in enumerate(AlGaN_super3_all_config[N_atoms]):
-            structure = Structure(lattice_matrix,config,cart_coords)
 
-            write_CRYSTAL_gui_from_data(lattice_matrix,atomic_numbers,
-                                cart_coords, full_name, dimensionality = 3)
+            atomic_numbers = config
+
+            folder_name = f'data/crystal/AlGaN/super3/config_{i}/'
+            file_name = f'AlGaN_super3_{N_atoms}_{i}_0.gui'
+            full_name = os.path.join(folder_name,file_name)
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+            
+            for i,config in enumerate(AlGaN_super3_all_config[N_atoms]):
+                structure = Structure(lattice_matrix,config,cart_coords)
+
+                write_CRYSTAL_gui_from_data(lattice_matrix,atomic_numbers,
+                                    cart_coords, full_name, dimensionality = 3)
 
 
 # %%

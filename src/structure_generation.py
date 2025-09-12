@@ -130,7 +130,7 @@ def get_all_configurations_pmg(structure_pmg,prec=6):
 
 
 
-def write_extended_xyz(structure, filename="structure.exyz", forces=None, energy=None):
+def write_extended_xyz(structure, filename="structure.exyz", forces=None, energy=None, comment=None):
     """
     Write a Pymatgen Structure to an extended XYZ (EXYZ) file.
     
@@ -139,26 +139,25 @@ def write_extended_xyz(structure, filename="structure.exyz", forces=None, energy
     - filename: Name of the file to save the extended XYZ
     - forces: Optional. List of forces for each atom. Shape: (n_atoms, 3)
     - energy: Optional. Total energy of the system
-    
+    - comment: Optional. String to include in the metadata line
     """
     with open(filename, 'w') as f:
         # 1️⃣ Write the number of atoms
         num_atoms = structure.num_sites
         f.write(f"{num_atoms}\n")
         
-        # 2️⃣ Write the metadata line
+        # 2️⃣ Build the metadata line
         lattice = structure.lattice.matrix
-        # Format the lattice vectors into a single row
         lattice_flat = " ".join(f"{val:.6f}" for row in lattice for val in row)
         
         metadata_parts = [f'Lattice="{lattice_flat}"']
         if energy is not None:
             metadata_parts.append(f'Energy={energy:.6f}')
-        
-        # If forces are provided, flatten them for the metadata line
         if forces is not None:
             forces_flat = " ".join(f"{force:.6f}" for force in np.array(forces).flatten())
             metadata_parts.append(f'Forces="{forces_flat}"')
+        if comment is not None:
+            metadata_parts.append(f'{comment}')
         
         metadata_line = " ".join(metadata_parts)
         f.write(f"{metadata_line}\n")
