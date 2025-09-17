@@ -228,6 +228,158 @@ with open(output_file, 'w') as outfile:
 
 
 # %% [markdown]
+# ## Convergence test - % HF
+
+# %% [markdown]
+# #### AlN
+
+# %%
+results = []
+
+for i in np.arange(0,26,5):
+    
+    with open(f'../data/convergence_tests/hf_exchange/Al_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+    Al_energy = read_last_scf_energy(file_content) 
+
+    with open(f'../data/convergence_tests/hf_exchange/N_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+    N_energy = read_last_scf_energy(file_content) 
+
+    with open(f'../data/convergence_tests/hf_exchange/AlN_r2scan_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+
+    # Parse the file content
+    parsed_structures, opt_end_converged_seen = parse_crystal_output(file_content, num_atoms=4) 
+    
+    if opt_end_converged_seen == True:
+        structure_tmp = parsed_structures[-1]
+        a,b,c,alpha,beta,gamma = matrix_to_lattice_params(structure_tmp['lattice_matrix'])
+        energy = structure_tmp['energy_ev']
+        formation_energy = energy-2*Al_energy-2*N_energy
+        band_gap = structure_tmp['band_gap_ev']
+
+        results.append(
+            {
+                "%HF": i,
+                #"Al_energy": Al_energy,
+                #"Ga_energy": Ga_energy,
+                # "AlN_energy": energy,
+                "formation_energy": formation_energy,
+                "band_gap": band_gap,
+                "a": a,
+                "b": b,
+                "c": c,
+                "alpha": alpha,
+                "beta": beta,
+                "gamma": gamma,
+            })
+        
+
+df = pd.DataFrame(results).set_index("%HF")
+df.to_csv("../data/convergence_tests/hf_exchange/AlN_hf_convergence_results.csv")
+df
+
+
+# %% [markdown]
+# #### GaN
+
+# %%
+results = []
+
+for i in np.arange(0,26,5):
+    
+    with open(f'../data/convergence_tests/hf_exchange/Ga_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+    Ga_energy = read_last_scf_energy(file_content) 
+
+    with open(f'../data/convergence_tests/hf_exchange/N_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+    N_energy = read_last_scf_energy(file_content) 
+
+    with open(f'../data/convergence_tests/hf_exchange/GaN_r2scan_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+
+    # Parse the file content
+    parsed_structures, opt_end_converged_seen = parse_crystal_output(file_content, num_atoms=4) 
+    
+    if opt_end_converged_seen == True:
+        structure_tmp = parsed_structures[-1]
+        a,b,c,alpha,beta,gamma = matrix_to_lattice_params(structure_tmp['lattice_matrix'])
+        energy = structure_tmp['energy_ev']
+        formation_energy = energy-2*Ga_energy-2*N_energy
+        band_gap = structure_tmp['band_gap_ev']
+
+        results.append(
+            {
+                "%HF": i,
+                #"Al_energy": Al_energy,
+                #"Ga_energy": Ga_energy,
+                # "AlN_energy": energy,
+                "formation_energy": formation_energy,
+                "band_gap": band_gap,
+                "a": a,
+                "b": b,
+                "c": c,
+                "alpha": alpha,
+                "beta": beta,
+                "gamma": gamma,
+            })
+        
+
+df = pd.DataFrame(results).set_index("%HF")
+df.to_csv("../data/convergence_tests/hf_exchange/GaN_hf_convergence_results.csv")
+df
+
+
+# %% [markdown]
+# ## Test r2SCAN vs r2SCAN0
+
+# %%
+random_idx = np.random.choice(np.arange(0, 21), size=12, replace=False)
+for i in [5,14,27,40,49]:
+    if i == 27:
+        for k in random_idx:
+            file = f'../data/seed_structures/333/r2SCAN/{i}Ga/initial/AlGaN_333_K{i}_F{k}_e0_md0_o0.xyz'
+            sh.copy(file,f'../data/convergence_tests/r2SCAN_vs_r2SCAN0/AlGaN_333_K{i}_F{k}_e0_md0_o0.xyz')
+    else:
+        k = np.random.randint(0,20)
+        file = f'../data/seed_structures/333/r2SCAN/{i}Ga/initial/AlGaN_333_K{i}_F{k}_e0_md0_o0.xyz'
+        sh.copy(file,f'../data/convergence_tests/r2SCAN_vs_r2SCAN0/AlGaN_333_K{i}_F{k}_e0_md0_o0.xyz')
+    
+
+
+# %%
+path = "../data/convergence_tests/r2SCAN_vs_r2SCAN0"
+xyz_files = [f for f in os.listdir(path) if f.endswith(".xyz")]
+
+files = []
+
+for file in xyz_files:
+    file_name = os.path.join(path,file)
+    atoms = read(file_name)
+    structure = AseAtomsAdaptor().get_structure(atoms)
+
+    full_name = file_name[:-4]+'.gui'
+    files.append(file[:-4])
+    sh.copy('../data/crystal_input_files/sp_r2scan_input.d12',
+            full_name[:-4]+'.d12')
+
+    lattice_matrix = structure.lattice.matrix
+    atomic_numbers = structure.atomic_numbers
+    cart_coords = structure.cart_coords
+
+    write_CRYSTAL_gui_from_data(lattice_matrix,atomic_numbers,
+                            cart_coords, full_name, dimensionality = 3)
+bash_script = generate_slurm_file(files)
+
+with open("../data/seed_structures/333/r2SCAN/5Ga/initial/slurm_file.slurm", "w") as f:
+    for fn in bash_script:
+        f.write(fn)
+
+    
+
+# %% [markdown]
 # ## Geometry optimisation
 
 # %%

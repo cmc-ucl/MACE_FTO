@@ -1,4 +1,21 @@
 import numpy as np
+import re
+from helper_functions import *
+from ase.data import chemical_symbols
+from typing import Tuple, Optional
+
+HARTREE_TO_EV = 27.211386245988
+BOHR_TO_ANGSTROM = 0.529177210903
+FORCE_HBOHR_TO_EVANG = HARTREE_TO_EV / BOHR_TO_ANGSTROM        # Hartree/Bohr -> eV/Å
+BOHR_CUBED_TO_ANGSTROM_CUBED = BOHR_TO_ANGSTROM ** 3
+STRESS_HBOHR3_TO_EVANG3 = HARTREE_TO_EV / BOHR_CUBED_TO_ANGSTROM_CUBED  # Hartree/Bohr^3 -> eV/
+
+def check_converged(content: str) -> bool:
+    """
+    Returns True if 'OPT END - CONVERGED' is in the file content string,
+    otherwise returns False.
+    """
+    return "OPT END - CONVERGED" in content
 
 def generate_slurm_file(file_names_list, project_code='e05-algor-smw'):
 
@@ -30,78 +47,152 @@ def generate_slurm_file(file_names_list, project_code='e05-algor-smw'):
     return bash_script
 
 
+
 def parse_crystal_output(file_content, num_atoms):
     """
-    Parse the file to extract structures and convert lattice parameters, coordinates, energy, forces,
-    and stress tensor to standard units (e.g., eV, Å).
+    Parse the CRYSTAL .out content and return a list[dict] of structures.
+    Each dict contains:
+      - lattice_matrix: (3,3) in Å
+      - fractional_coordinates: (N,3)
+      - cartesian_coordinates: (N,3) in Å
+      - atomic_symbols: list[str]
+      - energy_ev: float
+      - forces: (N,3) in eV/Å
+      - stress: (3,3) in eV/Å^3
+      - band_gap_ev: float (last gap seen in that SCF; 0.0 if none)
+    Note: OPT convergence is *not* per structure—handled later for the last frame only.
     """
+
     def extract_floats(line):
-        """Helper function to extract floats from a string."""
         return list(map(float, re.findall(r"[-+]?\d*\.\d+(?:[Ee][-+]?\d+)?", line)))
 
     results = []
     structure_data = {}
+    # Track the last band gap *since previous SCF end*; reset after each SCF ends.
+    last_gap_since_prev_scf = None
+    # Track OPT convergence anywhere in file (applies to last structure only)
+    opt_end_converged_seen = False
 
-    for i, line in enumerate(file_content):
-        line = line.strip()
+    # Optional: patterns
+    pat_coords_header = "ATOM                 X/A                 Y/B                 Z/C"
+    pat_scf_end = "== SCF ENDED - CONVERGENCE ON ENERGY"
+    pat_forces = "CARTESIAN FORCES IN HARTREE/BOHR (ANALYTICAL)"
+    pat_stress = "STRESS TENSOR, IN HARTREE/BOHR^3:"
+    pat_bandgap_dir = "DIRECT ENERGY BAND GAP:"
+    pat_bandgap_ind = "INDIRECT ENERGY BAND GAP:"
+    pat_opt_end = "OPT END - CONVERGED"
 
-        # Lattice parameters
-        if "ATOM                 X/A                 Y/B                 Z/C" in line:
-            lattice_params = extract_floats(file_content[i - 3])
+    i = 0
+    nlines = len(file_content)
+    while i < nlines:
+        line = file_content[i].strip()
+
+        # OPT convergence flag (for the overall optimization)
+        if pat_opt_end in line:
+            opt_end_converged_seen = True
+
+        # Lattice parameters appear a few lines above coords header
+        if pat_coords_header in line:
+            # lattice params expected 3 lines above, formatted: a b c alpha beta gamma
+            lattice_params = extract_floats(file_content[i - 3]) if i >= 3 else []
             if len(lattice_params) == 6:
                 a, b, c, alpha, beta, gamma = lattice_params
                 structure_data['lattice_matrix'] = lattice_params_to_matrix(a, b, c, alpha, beta, gamma)
 
-        # Fractional coordinates and atomic symbols
-        if "ATOM                 X/A                 Y/B                 Z/C" in line:
+            # Fractional coordinates and symbols: next num_atoms lines (skip 2 header lines)
             start = i + 2
             fractional_coords = []
             atomic_symbols = []
             for j in range(num_atoms):
                 coord_line = file_content[start + j].strip()
                 parts = coord_line.split()
-                atomic_number = int(parts[2])  # Third element is the atomic number
-                atomic_symbols.append(chemical_symbols[atomic_number])  # Convert to symbol
+                atomic_number = int(parts[2])  # 3rd column is atomic number
+                atomic_symbols.append(chemical_symbols[atomic_number])
                 fractional_coords.append(extract_floats(coord_line))
 
             structure_data['fractional_coordinates'] = fractional_coords
             structure_data['atomic_symbols'] = atomic_symbols
 
-            # Calculate Cartesian coordinates
-            lattice_matrix = structure_data['lattice_matrix']
-            structure_data['cartesian_coordinates'] = [
-                np.dot(coord, lattice_matrix) for coord in fractional_coords
-            ]
+            # Compute cartesian
+            if 'lattice_matrix' in structure_data:
+                lattice_matrix = np.array(structure_data['lattice_matrix'])
+                cart = np.dot(np.array(fractional_coords), lattice_matrix)
+                structure_data['cartesian_coordinates'] = cart.tolist()
 
-        # Energy
-        if "== SCF ENDED - CONVERGENCE ON ENERGY      E(AU)" in line:
-            energy_hartree = extract_floats(line)[0]
-            structure_data['energy_ev'] = energy_hartree * HARTREE_TO_EV
+            i += num_atoms  # skip past the block we just read
+            continue
 
-        # Forces
-        if "CARTESIAN FORCES IN HARTREE/BOHR (ANALYTICAL)" in line:
+        # Energy at SCF end (in Hartree)
+        if pat_scf_end in line:
+            floats = extract_floats(line)
+            if floats:
+                energy_hartree = floats[0]
+                structure_data['energy_ev'] = energy_hartree * HARTREE_TO_EV
+            # attach the last gap seen during this SCF (or 0.0)
+            structure_data['band_gap_ev'] = float(last_gap_since_prev_scf) if last_gap_since_prev_scf is not None else 0.0
+            # reset gap tracker for the next SCF
+            last_gap_since_prev_scf = None
+
+        # Forces block (Hartree/Bohr)
+        if pat_forces in line:
             start = i + 2
-            structure_data['forces'] = [
-                extract_floats(file_content[start + j])
-                for j in range(num_atoms)
-            ]
+            forces_hb = [extract_floats(file_content[start + j]) for j in range(num_atoms)]
+            forces = (np.array(forces_hb) * FORCE_HBOHR_TO_EVANG).tolist()
+            structure_data['forces'] = forces
 
-        # Stress tensor
-        if "STRESS TENSOR, IN HARTREE/BOHR^3:" in line:
+        # Stress tensor (Hartree/Bohr^3) — 3 lines, 3 columns
+        if pat_stress in line:
             start = i + 4
-            stress_hartree_bohr3 = [
-                extract_floats(file_content[start + j]) for j in range(3)
-            ]
-            stress_ev_angstrom3 = np.array(stress_hartree_bohr3) * (HARTREE_TO_EV / BOHR_CUBED_TO_ANGSTROM_CUBED)
-            structure_data['stress'] = stress_ev_angstrom3.tolist()
+            stress_hb3 = [extract_floats(file_content[start + j]) for j in range(3)]
+            stress = (np.array(stress_hb3) * STRESS_HBOHR3_TO_EVANG3).tolist()
+            structure_data['stress'] = stress
 
-        # Store the structure if all required fields are found
-        if all(key in structure_data for key in ['lattice_matrix', 'fractional_coordinates', 'cartesian_coordinates', 'energy_ev', 'forces', 'stress', 'atomic_symbols']):
+        # Band gap lines (capture the *latest* seen value; used at SCF end)
+        if (pat_bandgap_dir in line) or (pat_bandgap_ind in line):
+            vals = extract_floats(line)
+            if vals:
+                last_gap_since_prev_scf = vals[0]  # in eV already
+
+        # If we have all required pieces for one structure, store it.
+        required = ['lattice_matrix', 'fractional_coordinates', 'cartesian_coordinates',
+                    'energy_ev', 'forces', 'stress', 'atomic_symbols', 'band_gap_ev']
+        if all(k in structure_data for k in required):
             results.append(structure_data.copy())
-            structure_data = {}  # Reset for the next structure
+            structure_data.clear()
 
-    return results
+        i += 1
 
+    # Attach OPT convergence info so the writer can mark the last frame.
+    # We store it in a small side-channel: return a tuple (results, opt_flag)
+    # If you prefer returning only results, you can also stash it in results[-1]['opt_converged']
+    return results, opt_end_converged_seen
+
+_SCFE_LINE = re.compile(
+    r"SCF ENDED - CONVERGENCE ON ENERGY\s+E\(AU\)\s+([-+]?\.?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)"
+)
+
+def read_last_scf_energy(lines: str) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Return the last SCF total energy from a CRYSTAL .out file.
+    Output: (energy_hartree, energy_eV). If not found, returns (None, None).
+    """
+    energy_ha = None
+
+    # Read and scan from bottom to top to find the last occurrence quickly
+
+    for line in reversed(lines):
+        m = _SCFE_LINE.search(line)
+        if m:
+            try:
+                energy_ha = float(m.group(1))
+            except ValueError:
+                energy_ha = None
+            break
+
+    if energy_ha is None:
+        return None, None
+
+    return energy_ha * HARTREE_TO_EV
 
 def write_CRYSTAL_gui_from_data(lattice_matrix,atomic_numbers,
                                 cart_coords, file_name, dimensionality = 3):

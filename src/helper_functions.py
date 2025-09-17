@@ -180,4 +180,34 @@ def lattice_params_to_matrix(a, b, c, alpha, beta, gamma):
     return lattice_matrix
 
 
+def matrix_to_lattice_params(lattice_matrix):
+    """
+    Convert a 3x3 lattice matrix to lattice parameters.
+
+    Parameters:
+        lattice_matrix (numpy.ndarray): 3x3 lattice matrix.
+
+    Returns:
+        tuple: (a, b, c, alpha, beta, gamma)
+            a, b, c (float): Lattice constants.
+            alpha, beta, gamma (float): Angles (in degrees).
+    """
+    # Extract lattice vectors
+    a_vec = lattice_matrix[0]
+    b_vec = lattice_matrix[1]
+    c_vec = lattice_matrix[2]
+
+    # Lattice lengths
+    a = np.linalg.norm(a_vec)
+    b = np.linalg.norm(b_vec)
+    c = np.linalg.norm(c_vec)
+
+    # Angles (cosine formula)
+    alpha = np.degrees(np.arccos(np.dot(b_vec, c_vec) / (b * c)))
+    beta  = np.degrees(np.arccos(np.dot(a_vec, c_vec) / (a * c)))
+    gamma = np.degrees(np.arccos(np.dot(a_vec, b_vec) / (a * b)))
+
+    return a, b, c, alpha, beta, gamma
+
+
 
