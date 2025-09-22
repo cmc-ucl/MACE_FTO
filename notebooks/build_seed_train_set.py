@@ -29,6 +29,12 @@
 #
 
 # %% [markdown]
+# - occupation of orbitals in isolated atoms
+# - values of the eigenvalues (no 1/3 occupation)
+# - PBE + %HF
+# - read r2SCAN paper
+
+# %% [markdown]
 # #### Families
 #
 # Initial seed name:
@@ -231,6 +237,9 @@ with open(output_file, 'w') as outfile:
 # ## Convergence test - % HF
 
 # %% [markdown]
+# ### r2SCAN
+
+# %% [markdown]
 # #### AlN
 
 # %%
@@ -256,7 +265,7 @@ for i in np.arange(0,26,5):
         structure_tmp = parsed_structures[-1]
         a,b,c,alpha,beta,gamma = matrix_to_lattice_params(structure_tmp['lattice_matrix'])
         energy = structure_tmp['energy_ev']
-        formation_energy = energy-2*Al_energy-2*N_energy
+        formation_energy = (energy-2*Al_energy-2*N_energy)/2
         band_gap = structure_tmp['band_gap_ev']
 
         results.append(
@@ -307,7 +316,7 @@ for i in np.arange(0,26,5):
         structure_tmp = parsed_structures[-1]
         a,b,c,alpha,beta,gamma = matrix_to_lattice_params(structure_tmp['lattice_matrix'])
         energy = structure_tmp['energy_ev']
-        formation_energy = energy-2*Ga_energy-2*N_energy
+        formation_energy = (energy-2*Ga_energy-2*N_energy)/2
         band_gap = structure_tmp['band_gap_ev']
 
         results.append(
@@ -328,9 +337,244 @@ for i in np.arange(0,26,5):
         
 
 df = pd.DataFrame(results).set_index("%HF")
-df.to_csv("../data/convergence_tests/hf_exchange/GaN_hf_convergence_results.csv")
+df.to_csv("../data/convergence_tests/pbe_pbe_hf_exchange/GaN_hf_convergence_results.csv")
 df
 
+
+# %% [markdown]
+# #### Standard states
+
+# %% [markdown]
+# N2
+
+# %%
+with open(os.path.join(r2scan_folder,f'standard_state/N2_15HF.out', "r") as f:
+        file_content = f.readlines()
+N2_energy = read_last_scf_energy(file_content) 
+with open(os.path.join(r2scan_folder,f'N_15HF.out', "r") as f:
+        file_content = f.readlines()
+N_energy = read_last_scf_energy(file_content) 
+N2_energy-2*N_energy
+
+# %% [markdown]
+# Al
+
+# %%
+with open(f'../data/convergence_tests/hf_exchange/standard_state/Al_15HF.out', "r") as f:
+        file_content = f.readlines()
+Al_metal_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/hf_exchange/Al_15HF.out', "r") as f:
+        file_content = f.readlines()
+Al_energy = read_last_scf_energy(file_content)
+Al_metal_energy-Al_energy
+
+# %% [markdown]
+# Ga
+
+# %%
+with open(f'../data/convergence_tests/hf_exchange/standard_state/Ga_15HF.out', "r") as f:
+        file_content = f.readlines()
+Ga_metal_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/hf_exchange/Ga_15HF.out', "r") as f:
+        file_content = f.readlines()
+Ga_energy = read_last_scf_energy(file_content) 
+(Ga_metal_energy-4*Ga_energy)/4
+
+# %% [markdown]
+# #### Formation energy wrt standard state
+
+# %%
+with open(f'../data/convergence_tests/hf_exchange/standard_state/Al_15HF.out', "r") as f:
+        file_content = f.readlines()
+Al_metal_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/hf_exchange/standard_state/N2_15HF.out', "r") as f:
+        file_content = f.readlines()
+N2_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/hf_exchange/standard_state/Ga_15HF.out', "r") as f:
+        file_content = f.readlines()
+Ga_metal_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/hf_exchange/AlN_r2SCAN_15HF.out', "r") as f:
+        file_content = f.readlines()
+AlN_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/hf_exchange/GaN_r2SCAN_15HF.out', "r") as f:
+        file_content = f.readlines()
+GaN_energy = read_last_scf_energy(file_content) 
+print('AlN energy:',(AlN_energy-2*Al_metal_energy-N2_energy)/2)
+print('GaN energy:',(GaN_energy-Ga_metal_energy/2-N2_energy)/2)
+
+
+# %% [markdown]
+# ### PBE
+
+# %% [markdown]
+# #### AlN
+
+# %%
+results = []
+
+for i in np.arange(0,26,5):
+    
+    with open(f'../data/convergence_tests/pbe_hf_exchange/Al_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+    Al_energy = read_last_scf_energy(file_content) 
+
+    with open(f'../data/convergence_tests/pbe_hf_exchange/N_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+    N_energy = read_last_scf_energy(file_content) 
+
+    with open(f'../data/convergence_tests/pbe_hf_exchange/AlN_r2scan_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+
+    # Parse the file content
+    parsed_structures, opt_end_converged_seen = parse_crystal_output(file_content, num_atoms=4) 
+    
+    if opt_end_converged_seen == True:
+        structure_tmp = parsed_structures[-1]
+        a,b,c,alpha,beta,gamma = matrix_to_lattice_params(structure_tmp['lattice_matrix'])
+        energy = structure_tmp['energy_ev']
+        formation_energy = (energy-2*Al_energy-2*N_energy)/2
+        band_gap = structure_tmp['band_gap_ev']
+
+        results.append(
+            {
+                "%HF": i,
+                #"Al_energy": Al_energy,
+                #"Ga_energy": Ga_energy,
+                # "AlN_energy": energy,
+                "formation_energy": formation_energy,
+                "band_gap": band_gap,
+                "a": a,
+                "b": b,
+                "c": c,
+                "alpha": alpha,
+                "beta": beta,
+                "gamma": gamma,
+            })
+        
+
+df = pd.DataFrame(results).set_index("%HF")
+df.to_csv("../data/convergence_tests/pbe_hf_exchange/AlN_hf_convergence_results.csv")
+df
+
+# %% [markdown]
+# #### GaN
+
+# %%
+results = []
+
+for i in np.arange(0,26,5):
+    
+    with open(f'../data/convergence_tests/pbe_hf_exchange/Ga_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+    Ga_energy = read_last_scf_energy(file_content) 
+
+    with open(f'../data/convergence_tests/pbe_hf_exchange/N_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+    N_energy = read_last_scf_energy(file_content) 
+
+    with open(f'../data/convergence_tests/pbe_hf_exchange/GaN_r2scan_{i}HF.out', "r") as f:
+        file_content = f.readlines()
+
+    # Parse the file content
+    parsed_structures, opt_end_converged_seen = parse_crystal_output(file_content, num_atoms=4) 
+    
+    if opt_end_converged_seen == True:
+        structure_tmp = parsed_structures[-1]
+        a,b,c,alpha,beta,gamma = matrix_to_lattice_params(structure_tmp['lattice_matrix'])
+        energy = structure_tmp['energy_ev']
+        formation_energy = (energy-2*Ga_energy-2*N_energy)/2
+        band_gap = structure_tmp['band_gap_ev']
+
+        results.append(
+            {
+                "%HF": i,
+                #"Al_energy": Al_energy,
+                #"Ga_energy": Ga_energy,
+                # "AlN_energy": energy,
+                "formation_energy": formation_energy,
+                "band_gap": band_gap,
+                "a": a,
+                "b": b,
+                "c": c,
+                "alpha": alpha,
+                "beta": beta,
+                "gamma": gamma,
+            })
+        
+
+df = pd.DataFrame(results).set_index("%HF")
+df.to_csv("../data/convergence_tests/pbe_hf_exchange/GaN_hf_convergence_results.csv")
+df
+
+# %% [markdown]
+# #### Standard states
+
+# %% [markdown]
+# N2
+
+# %%
+with open(f'../data/convergence_tests/pbe_hf_exchange/standard_state/N2_15HF.out', "r") as f:
+        file_content = f.readlines()
+N2_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/pbe_hf_exchange/N_15HF.out', "r") as f:
+        file_content = f.readlines()
+N_energy = read_last_scf_energy(file_content) 
+N2_energy-2*N_energy
+
+# %% [markdown]
+# Al
+
+# %%
+with open(f'../data/convergence_tests/pbe_hf_exchange/standard_state/Al_15HF.out', "r") as f:
+        file_content = f.readlines()
+Al_metal_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/pbe_hf_exchange/Al_15HF.out', "r") as f:
+        file_content = f.readlines()
+Al_energy = read_last_scf_energy(file_content)
+Al_metal_energy-Al_energy
+
+# %% [markdown]
+# Ga
+
+# %%
+with open(f'../data/convergence_tests/pbe_hf_exchange/standard_state/Ga_15HF.out', "r") as f:
+        file_content = f.readlines()
+Ga_metal_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/pbe_hf_exchange/Ga_15HF.out', "r") as f:
+        file_content = f.readlines()
+Ga_energy = read_last_scf_energy(file_content) 
+(Ga_metal_energy-4*Ga_energy)/4
+
+# %% [markdown]
+# ### Formation energy wrt standard state
+
+# %%
+with open(f'../data/convergence_tests/pbe_hf_exchange/standard_state/Al_15HF.out', "r") as f:
+        file_content = f.readlines()
+Al_metal_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/pbe_hf_exchange/standard_state/N2_15HF.out', "r") as f:
+        file_content = f.readlines()
+N2_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/pbe_hf_exchange/standard_state/Ga_15HF.out', "r") as f:
+        file_content = f.readlines()
+Ga_metal_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/pbe_hf_exchange/AlN_r2SCAN_15HF.out', "r") as f:
+        file_content = f.readlines()
+AlN_energy = read_last_scf_energy(file_content) 
+with open(f'../data/convergence_tests/pbe_hf_exchange/GaN_r2SCAN_15HF.out', "r") as f:
+        file_content = f.readlines()
+GaN_energy = read_last_scf_energy(file_content) 
+print('AlN energy:',(AlN_energy-2*Al_metal_energy-N2_energy)/2)
+print('GaN energy:',(GaN_energy-Ga_metal_energy/2-N2_energy)/2)
+
+
+# %% [markdown]
+# ### B3LYP
+
+# %%
+N_energy = -5.4572189496862E+01*HARTREE_TO_EV
+N2_energy = -1.0947321502613E+02*HARTREE_TO_EV
+N2_energy-2*N_energy
 
 # %% [markdown]
 # ## Test r2SCAN vs r2SCAN0
