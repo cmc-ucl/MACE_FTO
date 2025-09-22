@@ -337,7 +337,7 @@ for i in np.arange(0,26,5):
         
 
 df = pd.DataFrame(results).set_index("%HF")
-df.to_csv("../data/convergence_tests/pbe_pbe_hf_exchange/GaN_hf_convergence_results.csv")
+df.to_csv("../data/convergence_tests/hf_exchange/GaN_hf_convergence_results.csv")
 df
 
 
@@ -348,10 +348,10 @@ df
 # N2
 
 # %%
-with open(os.path.join(r2scan_folder,f'standard_state/N2_15HF.out', "r") as f:
+with open(f'../data/convergence_tests/hf_exchange/standard_state/N2_15HF.out', "r") as f:
         file_content = f.readlines()
 N2_energy = read_last_scf_energy(file_content) 
-with open(os.path.join(r2scan_folder,f'N_15HF.out', "r") as f:
+with open(f'../data/convergence_tests/hf_exchange/N_15HF.out', "r") as f:
         file_content = f.readlines()
 N_energy = read_last_scf_energy(file_content) 
 N2_energy-2*N_energy
