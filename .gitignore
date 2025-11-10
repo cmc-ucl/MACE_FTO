@@ -3,7 +3,7 @@ data/convergence_tests/r2SCAN_vs_r2SCAN0/*
 
 # CRYSTAL DATA
 data/crystal_input_files/*
-data/seed_structures/333/r2SCAN/*
+data/seed_structures/333/PBE_23HF/*
 
 # MODELS
 models/*

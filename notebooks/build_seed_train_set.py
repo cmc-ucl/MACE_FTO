@@ -51,9 +51,9 @@
 #
 # supercell_size
 #     |
-#     -- functional r2SCAN
+#     -- functional PBE+23%HF
 #         |
-#         composition 7 (0,0.1,0.25,0.5,0.75,0.9,1) -> 0,5,14,27,40,49,54 Ga atoms
+#         composition 7 (0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1) -> 0,7,14,20,27,34,40,47,54 Ga atoms
 #             |
 #             -- family (configuration) generate 20 - use 5
 #                 |
@@ -64,6 +64,12 @@
 #
 #
 # So we can select the F using random split and then select a subset of structures within that group.
+
+# %%
+(-2.4224789522504E+02--2.4224862509219E+02)*HARTREE_TO_EV
+
+# %%
+(-1.9244974396461E+03--1.9245008224103E+03)*HARTREE_TO_EV
 
 # %%
 # %load_ext autoreload
@@ -106,6 +112,26 @@ def vview(structure):
     
     view(AseAtomsAdaptor().get_atoms(structure))
 
+
+# %% [markdown]
+# ## Final BS - Ahlrich
+
+# %%
+# FHI-AIMS
+F_Al = -6611.09
+F_Ga = -53179.5
+F_N = -1485.56
+F_AlN = -16217.1
+F_GaN = -109350
+
+# %%
+# Atomic BS
+Al = -2.4224862509219E+02*HARTREE_TO_EV
+Ga = -1.9245008224103E+03*HARTREE_TO_EV
+N = -5.4542961181595E+01*HARTREE_TO_EV
+
+# Materials BS
+AlN = # Aurora to send
 
 # %% [markdown]
 # ### AlN and GaN experimental structures
@@ -154,14 +180,14 @@ num_active_sites=len(active_sites)
 N_atom = 31
 num_families = 20
 all_config_atom_number = {}
-compositions = [0.1,0.25,0.5,0.75,0.9]
+compositions = np.arange(0,1.01,0.125)
 for n,comp in enumerate(compositions):
    
     N_Ga = int(np.round(num_active_sites*comp))
 
     structures_random = generate_random_structures(AlN_333_exp,atom_indices=atom_indices_aln,
                                                    N_atoms=N_Ga,new_species=31,N_config=500,
-                                                   DFT_config=num_families,active_sites=active_sites)
+                                                   DFT_config=num_families,active_sites=active_sites,seed=2025202)
 
     atom_number_tmp = []
     for structure in structures_random:
@@ -178,14 +204,6 @@ with open('../data/seed_structures/333/AlGaN_super3.json', 'r', encoding='utf-8'
 
 
 # %%
-len(AlGaN_super3_all_config['5'])
-
-# %%
-# Generate the Extended XYZ files
-AlN_lattice_matrix = np.round(AlN_exp.lattice.matrix[0:3], 6)
-GaN_lattice_matrix = np.round(GaN_exp.lattice.matrix[0:3], 6)
-
-# %%
 # Generate the Extended XYZ files
 AlN_lattice_matrix = np.round(AlN_333_exp.lattice.matrix[0:3], 6)
 GaN_lattice_matrix = np.round(GaN_333_exp.lattice.matrix[0:3], 6)
@@ -197,11 +215,12 @@ for N_atoms in AlGaN_super3_all_config.keys():
     Ga_comp = int(N_atoms)/num_active_sites
     AlGaN_lattice_matrix = (AlN_lattice_matrix*(1-Ga_comp) + GaN_lattice_matrix*Ga_comp)
 
-    folder_name = f'../data/seed_structures/333/r2SCAN/{N_atoms}Ga/initial/'
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
+    
     
     for i,config in enumerate(AlGaN_super3_all_config[N_atoms]):
+        folder_name = f'../data/seed_structures/333/PBE_23HF/{N_atoms}Ga/{i}/initial/'
+        if not os.path.exists(folder_name):
+            os.makedirs(folder_name)
         structure = Structure(AlGaN_lattice_matrix,config,positions) # here we use the AlN positions
 
         write_extended_xyz(structure,os.path.join(folder_name,f'AlGaN_333_K{N_atoms}_F{i}_e0_md0_o0.xyz'),
@@ -210,17 +229,24 @@ for N_atoms in AlGaN_super3_all_config.keys():
 # %% [markdown]
 # ### Concatenate files
 
+# %% [markdown]
+# #### All initial structures
+
 # %%
 # Ensure the output folder exists
-output_file = '../data/seed_structures/333/r2SCAN/concatenated_files/initial/AlGaN_333_KX_FX_e0_md0_o0.xyz'
+output_file = '../data/seed_structures/333/PBE_23HF/concatenated_files/initial/AlGaN_333_KX_FX_e0_md0_o0.xyz'
 
 os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
 with open(output_file, 'w') as outfile:
     for comp in compositions:
         N_Ga = int(np.round(num_active_sites*comp)) 
-        for f in range(num_families):
-            file_path = f'../data/seed_structures/333/r2SCAN/{N_Ga}Ga/initial/AlGaN_333_K{N_Ga}_F{f}_e0_md0_o0.xyz'
+        if N_Ga > 1 and N_Ga < 54:
+            num_fam = copy.deepcopy(num_families)
+        else:
+            num_fam = 1
+        for f in range(num_fam):
+            file_path = f'../data/seed_structures/333/PBE_23HF/{N_Ga}Ga/{f}/initial/AlGaN_333_K{N_Ga}_F{f}_e0_md0_o0.xyz'
         # for file_name in sorted(os.listdir(input_folder)):
         #     if file_name.endswith(".xyz"):
         #         file_path = os.path.join(input_folder, file_name)
@@ -234,10 +260,331 @@ with open(output_file, 'w') as outfile:
 
 
 # %% [markdown]
-# ## Convergence test - % HF
+# ## Geometry optimisation
+
+# %%
+atoms = read('../data/seed_structures/333/PBE_23HF/7Ga/0/initial/AlGaN_333_K7_F0_e0_md0_o0.xyz')
+structure = AseAtomsAdaptor().get_structure(atoms)
+
+
+# %%
+import os
+import shutil as sh
+from ase.io import read
+from pymatgen.io.ase import AseAtomsAdaptor
+
+files = []
+max_family = 4
+
+for comp in compositions:
+    N_Ga = int(np.round(num_active_sites * comp))
+
+    if N_Ga > 1 and N_Ga < 54:
+        num_fam = copy.deepcopy(num_families)
+    else:
+        num_fam = 1
+    
+    for f in range(num_fam):
+
+        # Read structure
+        atoms = read(f'../data/seed_structures/333/PBE_23HF/{N_Ga}Ga/{f}/initial/AlGaN_333_K{N_Ga}_F{f}_e0_md0_o0.xyz')
+        structure = AseAtomsAdaptor().get_structure(atoms)
+
+        # Prepare folder and filenames
+        folder_name = f'../data/seed_structures/333/PBE_23HF/{N_Ga}Ga/{f}/optgeom/'
+        file_name = f'AlGaN_333_K{N_Ga}_F{f}_e0_md0_o1.gui'
+        full_name = os.path.join(folder_name, file_name)
+
+        # ✅ Ensure folder exists before copying or writing
+        os.makedirs(folder_name, exist_ok=True)
+
+        # Add to list if in family range
+        if f <= max_family:
+            files.append(file_name)
+
+        # Copy input file template
+        sh.copy('../data/crystal_input_files/fulloptg_PBE_23HF_input.d12',
+                full_name[:-3] + 'd12')
+
+        # Write the GUI file
+        lattice_matrix = structure.lattice.matrix
+        atomic_numbers = structure.atomic_numbers
+        cart_coords = structure.cart_coords
+
+        write_CRYSTAL_gui_from_data(
+            lattice_matrix, atomic_numbers, cart_coords,
+            full_name, dimensionality=3
+        )
+
+# Generate bash script
+bash_script = generate_slurm_file(files,hours=48)
+
 
 # %% [markdown]
-# ### r2SCAN
+# ### Read CRYSTAL output files
+
+# %%
+out_xyz = write_extxyz_from_crystal_output(
+    "AlGaN_super3_12_7_0.out",
+    output_path="AlGaN_super3_12_7_0.xyz",
+    num_atoms=108,
+    config_type="geometry_optimisation",
+    system_name="AlGaN_super3_12_7",
+    comment="this=3 that=4"
+)
+
+# %%
+with open('data/crystal/AlGaN/super3/output_files/AlGaN_super3_1_0_0.out', 'r') as f:
+    file_content = f.readlines()
+
+# %% [markdown]
+# Example usage
+
+# %%
+
+# num_atoms = 108  
+# # Parse the file and extract structures with lattice matrix conversion
+# parsed_structures = parse_crystal_output(file_content, num_atoms)
+
+# # Convert to DataFrame for inspection
+# df_structures = pd.DataFrame(parsed_structures)
+
+# # Generate extended XYZ files
+# generate_extended_xyz_files_from_df(df_structures, 'data/crystal/AlGaN/super3/output_files/test')
+
+# %% [markdown]
+# #### Write all the extxyz from all output files
+
+# %%
+# Write all the extxyz from all output files
+import os
+import numpy as np
+import pandas as pd
+
+# Folder containing the .out files
+# folder_path = "data/crystal/AlGaN/super3/output_files"
+# output_folder = "data/crystal/AlGaN/super3/extxyz_files"
+folder_path = "data/crystal/AlGaN/pbe0/output_files"
+output_folder = "data/crystal/AlGaN/pbe0/extxyz_files"
+os.makedirs(output_folder, exist_ok=True)  # Ensure the output folder exists
+
+# Loop over X values
+for X in np.arange(54):  # Adjust the range as needed
+    for Y in np.arange(10):  # Adjust the range as needed
+        # Global index for structures extracted for the current X and Y
+        global_index = 0
+        Z = 0
+
+        while True:
+            # Construct file path for the current Z
+            file_name = f"AlGaN_super3_{X}_{Y}_{Z}.out"
+            file_path = os.path.join(folder_path, file_name)
+
+            # Check if the file exists
+            if not os.path.exists(file_path):
+                break  # Exit the loop when no more Z files exist for this X_Y
+
+            # Read the file and process its content
+            with open(file_path, "r") as f:
+                file_content = f.readlines()
+
+            # Parse the file content
+            parsed_structures = parse_crystal_output(file_content, num_atoms=108)  # Replace 108 with your atom count
+
+            # Convert parsed structures to a DataFrame
+            df_structures = pd.DataFrame(parsed_structures)
+
+            # Save all extracted structures with unique global indices
+            for _, row in df_structures.iterrows():
+                # Generate the output file name with the incrementing global index
+                output_file = os.path.join(
+                    output_folder, f"AlGaN_super3_{X}_{Y}_{global_index}.xyz"
+                )
+
+                # Write the structure to an extended XYZ file
+                with open(output_file, "w") as out_f:
+                    # Write number of atoms
+                    num_atoms = len(row['cartesian_coordinates'])
+                    out_f.write(f"{num_atoms}\n")
+
+                    # Write metadata
+                    lattice_flat = " ".join(f"{value:.12e}" for value in row['lattice_matrix'].flatten())
+                    stress_flat = " ".join(f"{value:.12e}" for value in np.array(row['stress']).flatten())
+                    out_f.write(
+                        f"dft_energy={row['energy_ev']:.12e} "
+                        f'Lattice="{lattice_flat}" '
+                        f'dft_stress="{stress_flat}" '
+                        f'Properties=species:S:1:pos:R:3:dft_forces:R:3 '
+                        f'config_type=random '
+                        # f'system_name={os.path.basename(output_file[:-4])}\n'
+                        f'system_name=random\n'
+                    )
+
+                    # Write atomic data
+                    for symbol, coord, force in zip(row['atomic_symbols'], row['cartesian_coordinates'], row['forces']):
+                        out_f.write(
+                            f"{symbol} {coord[0]:.12e} {coord[1]:.12e} {coord[2]:.12e} "
+                            f"{force[0]:.12e} {force[1]:.12e} {force[2]:.12e}\n"
+                        )
+
+                # Increment the global index
+                global_index += 1
+
+            # Increment Z to process the next file
+            Z += 1
+
+# %% [markdown]
+# Check for dusplicates
+
+# %%
+# Folder containing the .out files
+folder_path = "data/crystal/AlGaN/pbe0/extxyz_files/"
+
+# Example: Check for duplicates in AlGaN_super3_1_0_*
+x = 1
+y = 1
+pattern_prefix = f"AlGaN_super3_{x}_{y}_"
+duplicates = find_duplicate_files(folder_path, pattern_prefix)
+
+if duplicates:
+    print("Duplicate files found:")
+    for file1, file2 in duplicates:
+        print(f"{file1} and {file2}")
+else:
+    print("No duplicate files found.")
+
+# %% [markdown]
+# ## MD - initial structures
+
+# %%
+files = []
+max_family = 1
+
+for comp in compositions:
+    N_Ga = int(np.round(num_active_sites * comp))
+
+    if N_Ga > 1 and N_Ga < 54:
+        num_fam = copy.deepcopy(max_family)
+    else:
+        num_fam = 1
+    
+    for f in range(num_fam):
+
+        # Read structure
+        sh.copy(f'../data/seed_structures/333/PBE_23HF/{N_Ga}Ga/{f}/initial/AlGaN_333_K{N_Ga}_F{f}_e0_md0_o0.xyz',
+                f'../data/seed_structures/333/PBE_23HF/concatenated_files/md_initial/AlGaN_333_K{N_Ga}_F{f}_e0_md0_o0.xyz')
+#         structure = AseAtomsAdaptor().get_structure(atoms)
+
+#         # Prepare folder and filenames
+#         folder_name = f'../data/seed_structures/333/PBE_23HF/{N_Ga}Ga/{f}/optgeom/'
+#         file_name = f'AlGaN_333_K{N_Ga}_F{f}_e0_md0_o1.gui'
+#         full_name = os.path.join(folder_name, file_name)
+
+#         # ✅ Ensure folder exists before copying or writing
+#         os.makedirs(folder_name, exist_ok=True)
+
+#         # Add to list if in family range
+#         if f <= max_family:
+#             files.append(file_name)
+
+#         # Copy input file template
+#         sh.copy('../data/crystal_input_files/fulloptg_PBE_23HF_input.d12',
+#                 full_name[:-3] + 'd12')
+
+#         # Write the GUI file
+#         lattice_matrix = structure.lattice.matrix
+#         atomic_numbers = structure.atomic_numbers
+#         cart_coords = structure.cart_coords
+
+#         write_CRYSTAL_gui_from_data(
+#             lattice_matrix, atomic_numbers, cart_coords,
+#             full_name, dimensionality=3
+#         )
+
+# # Generate bash script
+# bash_script = generate_slurm_file(files,hours=48)
+
+# %%
+# Example usage
+input_folder = "data/crystal/AlGaN/pbe0/extxyz_files"
+output_file = "data/crystal/AlGaN/pbe0/concatenated_files/AlGaN_super3_all.xyz"
+concatenate_xyz_files(input_folder, output_file)
+
+# %%
+
+# %% [markdown]
+# ### Read structures ASE
+#
+# The stress is rounded, change to full value from CRYSTAL
+
+# %%
+test_file = "data/crystal/AlGaN/super3/concatenated_files/AlGaN_super3_all.xyz"
+atoms = read(test_file, index=":")
+
+# %%
+
+# # Directory containing the extxyz files
+# directory = 'data/crystal/AlGaN/super3/extxyz_files/'
+
+# # List to store the atoms and stress tensors
+# atoms_list = []
+# stress_list = []
+
+# # Iterate over all files in the directory
+# for filename in os.listdir(directory):
+#     if filename.endswith('.xyz'):  # Only process .extxyz files
+#         file_path = os.path.join(directory, filename)
+        
+#         # Read the ASE atoms object
+#         atoms = read(file_path, format='extxyz')
+#         atoms_list.append(atoms)
+        
+#         # Extract the stress tensor if it exists
+#         stress_flat = atoms.info.get("Stress")
+#         if stress_flat is not None:
+#             stress = stress_flat.reshape(3, 3)
+#             stress_list.append(stress)
+#         else:
+#             print(f"No stress information found in {filename}")
+#             stress_list.append(None)
+
+# %% [markdown]
+# #### Test/Train split
+
+# %%
+# Convert lists to numpy arrays for easier indexing
+atoms_array = np.array(atoms_list, dtype=object)
+stress_array = np.array(stress_list, dtype=object)
+
+# Generate random indices for train-test split
+n_samples = len(atoms_array)
+test_size = 0.2
+n_test = int(n_samples * test_size)
+
+# Create a random permutation of indices
+indices = np.arange(n_samples)
+np.random.shuffle(indices)
+
+# Split indices for train and test sets
+test_indices = indices[:n_test]
+train_indices = indices[n_test:]
+
+# Split the data
+atoms_train = atoms_array[train_indices]
+atoms_test = atoms_array[test_indices]
+stress_train = stress_array[train_indices]
+stress_test = stress_array[test_indices]
+
+# Output information
+print(f"Total structures: {n_samples}")
+print(f"Training set: {len(atoms_train)} structures")
+print(f"Testing set: {len(atoms_test)} structures")
+
+# %% [markdown]
+# # OLD
+
+# %% [markdown]
+# ## Convergence test - % HF
 
 # %% [markdown]
 # #### AlN
@@ -289,7 +636,6 @@ df = pd.DataFrame(results).set_index("%HF")
 df.to_csv("../data/convergence_tests/hf_exchange/AlN_hf_convergence_results.csv")
 df
 
-
 # %% [markdown]
 # #### GaN
 
@@ -339,7 +685,6 @@ for i in np.arange(0,26,5):
 df = pd.DataFrame(results).set_index("%HF")
 df.to_csv("../data/convergence_tests/hf_exchange/GaN_hf_convergence_results.csv")
 df
-
 
 # %% [markdown]
 # #### Standard states
@@ -401,7 +746,6 @@ with open(f'../data/convergence_tests/hf_exchange/GaN_r2SCAN_15HF.out', "r") as 
 GaN_energy = read_last_scf_energy(file_content) 
 print('AlN energy:',(AlN_energy-2*Al_metal_energy-N2_energy)/2)
 print('GaN energy:',(GaN_energy-Ga_metal_energy/2-N2_energy)/2)
-
 
 # %% [markdown]
 # ### PBE
@@ -567,7 +911,6 @@ GaN_energy = read_last_scf_energy(file_content)
 print('AlN energy:',(AlN_energy-2*Al_metal_energy-N2_energy)/2)
 print('GaN energy:',(GaN_energy-Ga_metal_energy/2-N2_energy)/2)
 
-
 # %% [markdown]
 # ### B3LYP
 
@@ -624,246 +967,9 @@ with open("../data/seed_structures/333/r2SCAN/5Ga/initial/slurm_file.slurm", "w"
     
 
 # %% [markdown]
-# ## Geometry optimisation
-
-# %%
-atoms = read('../data/seed_structures/333/r2SCAN/5Ga/initial/AlGaN_333_K5_F0_e0_md0_o0.xyz')
-structure = AseAtomsAdaptor().get_structure(atoms)
-
-
-# %%
-files = []
-max_family = 4
-for comp in compositions:
-    N_Ga = int(np.round(num_active_sites*comp)) 
-    for f in range(num_families):
-        atoms = read(f'../data/seed_structures/333/r2SCAN/{N_Ga}Ga/initial/AlGaN_333_K{N_Ga}_F{f}_e0_md0_o0.xyz')
-        structure = AseAtomsAdaptor().get_structure(atoms)
-
-        folder_name = f'../data/seed_structures/333/r2SCAN/{N_Ga}Ga/optgeom/'
-        file_name = f'AlGaN_333_K{N_Ga}_F{f}_e0_md0_o1.gui'
-        full_name = os.path.join(folder_name,file_name)
-        if f <= max_family:
-            files.append(full_name)
-        sh.copy('../data/crystal_input_files/fulloptg_r2scan_input.d12',
-                full_name[:-3]+'d12')
-        if not os.path.exists(folder_name):
-            os.makedirs(folder_name)
-        lattice_matrix = structure.lattice.matrix
-        atomic_numbers = structure.atomic_numbers
-        cart_coords = structure.cart_coords
-
-        write_CRYSTAL_gui_from_data(lattice_matrix,atomic_numbers,
-                                cart_coords, full_name, dimensionality = 3)
-bash_script = generate_slurm_file(files)
-
+# TZVP
 
 # %% [markdown]
-# ### Read CRYSTAL output files
+# TZVP
 
 # %%
-out_xyz = write_extxyz_from_crystal_output(
-    "AlGaN_super3_12_7_0.out",
-    output_path="AlGaN_super3_12_7_0.xyz",
-    num_atoms=108,
-    config_type="geometry_optimisation",
-    system_name="AlGaN_super3_12_7",
-    comment="this=3 that=4"
-)
-
-# %%
-with open('data/crystal/AlGaN/super3/output_files/AlGaN_super3_1_0_0.out', 'r') as f:
-    file_content = f.readlines()
-
-# %% [markdown]
-# Example usage
-
-# %%
-
-# num_atoms = 108  
-# # Parse the file and extract structures with lattice matrix conversion
-# parsed_structures = parse_crystal_output(file_content, num_atoms)
-
-# # Convert to DataFrame for inspection
-# df_structures = pd.DataFrame(parsed_structures)
-
-# # Generate extended XYZ files
-# generate_extended_xyz_files_from_df(df_structures, 'data/crystal/AlGaN/super3/output_files/test')
-
-# %% [markdown]
-# #### Write all the extxyz from all output files
-
-# %%
-# Write all the extxyz from all output files
-import os
-import numpy as np
-import pandas as pd
-
-# Folder containing the .out files
-# folder_path = "data/crystal/AlGaN/super3/output_files"
-# output_folder = "data/crystal/AlGaN/super3/extxyz_files"
-folder_path = "data/crystal/AlGaN/pbe0/output_files"
-output_folder = "data/crystal/AlGaN/pbe0/extxyz_files"
-os.makedirs(output_folder, exist_ok=True)  # Ensure the output folder exists
-
-# Loop over X values
-for X in np.arange(54):  # Adjust the range as needed
-    for Y in np.arange(10):  # Adjust the range as needed
-        # Global index for structures extracted for the current X and Y
-        global_index = 0
-        Z = 0
-
-        while True:
-            # Construct file path for the current Z
-            file_name = f"AlGaN_super3_{X}_{Y}_{Z}.out"
-            file_path = os.path.join(folder_path, file_name)
-
-            # Check if the file exists
-            if not os.path.exists(file_path):
-                break  # Exit the loop when no more Z files exist for this X_Y
-
-            # Read the file and process its content
-            with open(file_path, "r") as f:
-                file_content = f.readlines()
-
-            # Parse the file content
-            parsed_structures = parse_crystal_output(file_content, num_atoms=108)  # Replace 108 with your atom count
-
-            # Convert parsed structures to a DataFrame
-            df_structures = pd.DataFrame(parsed_structures)
-
-            # Save all extracted structures with unique global indices
-            for _, row in df_structures.iterrows():
-                # Generate the output file name with the incrementing global index
-                output_file = os.path.join(
-                    output_folder, f"AlGaN_super3_{X}_{Y}_{global_index}.xyz"
-                )
-
-                # Write the structure to an extended XYZ file
-                with open(output_file, "w") as out_f:
-                    # Write number of atoms
-                    num_atoms = len(row['cartesian_coordinates'])
-                    out_f.write(f"{num_atoms}\n")
-
-                    # Write metadata
-                    lattice_flat = " ".join(f"{value:.12e}" for value in row['lattice_matrix'].flatten())
-                    stress_flat = " ".join(f"{value:.12e}" for value in np.array(row['stress']).flatten())
-                    out_f.write(
-                        f"dft_energy={row['energy_ev']:.12e} "
-                        f'Lattice="{lattice_flat}" '
-                        f'dft_stress="{stress_flat}" '
-                        f'Properties=species:S:1:pos:R:3:dft_forces:R:3 '
-                        f'config_type=random '
-                        # f'system_name={os.path.basename(output_file[:-4])}\n'
-                        f'system_name=random\n'
-                    )
-
-                    # Write atomic data
-                    for symbol, coord, force in zip(row['atomic_symbols'], row['cartesian_coordinates'], row['forces']):
-                        out_f.write(
-                            f"{symbol} {coord[0]:.12e} {coord[1]:.12e} {coord[2]:.12e} "
-                            f"{force[0]:.12e} {force[1]:.12e} {force[2]:.12e}\n"
-                        )
-
-                # Increment the global index
-                global_index += 1
-
-            # Increment Z to process the next file
-            Z += 1
-
-# %% [markdown]
-# Check for dusplicates
-
-# %%
-# Folder containing the .out files
-folder_path = "data/crystal/AlGaN/pbe0/extxyz_files/"
-
-# Example: Check for duplicates in AlGaN_super3_1_0_*
-x = 1
-y = 1
-pattern_prefix = f"AlGaN_super3_{x}_{y}_"
-duplicates = find_duplicate_files(folder_path, pattern_prefix)
-
-if duplicates:
-    print("Duplicate files found:")
-    for file1, file2 in duplicates:
-        print(f"{file1} and {file2}")
-else:
-    print("No duplicate files found.")
-
-# %% [markdown]
-# #### Concatenate files
-
-# %%
-# Example usage
-input_folder = "data/crystal/AlGaN/pbe0/extxyz_files"
-output_file = "data/crystal/AlGaN/pbe0/concatenated_files/AlGaN_super3_all.xyz"
-concatenate_xyz_files(input_folder, output_file)
-
-# %% [markdown]
-# ### Read structures ASE
-#
-# The stress is rounded, change to full value from CRYSTAL
-
-# %%
-test_file = "data/crystal/AlGaN/super3/concatenated_files/AlGaN_super3_all.xyz"
-atoms = read(test_file, index=":")
-
-# %%
-
-# # Directory containing the extxyz files
-# directory = 'data/crystal/AlGaN/super3/extxyz_files/'
-
-# # List to store the atoms and stress tensors
-# atoms_list = []
-# stress_list = []
-
-# # Iterate over all files in the directory
-# for filename in os.listdir(directory):
-#     if filename.endswith('.xyz'):  # Only process .extxyz files
-#         file_path = os.path.join(directory, filename)
-        
-#         # Read the ASE atoms object
-#         atoms = read(file_path, format='extxyz')
-#         atoms_list.append(atoms)
-        
-#         # Extract the stress tensor if it exists
-#         stress_flat = atoms.info.get("Stress")
-#         if stress_flat is not None:
-#             stress = stress_flat.reshape(3, 3)
-#             stress_list.append(stress)
-#         else:
-#             print(f"No stress information found in {filename}")
-#             stress_list.append(None)
-
-# %% [markdown]
-# #### Test/Train split
-
-# %%
-# Convert lists to numpy arrays for easier indexing
-atoms_array = np.array(atoms_list, dtype=object)
-stress_array = np.array(stress_list, dtype=object)
-
-# Generate random indices for train-test split
-n_samples = len(atoms_array)
-test_size = 0.2
-n_test = int(n_samples * test_size)
-
-# Create a random permutation of indices
-indices = np.arange(n_samples)
-np.random.shuffle(indices)
-
-# Split indices for train and test sets
-test_indices = indices[:n_test]
-train_indices = indices[n_test:]
-
-# Split the data
-atoms_train = atoms_array[train_indices]
-atoms_test = atoms_array[test_indices]
-stress_train = stress_array[train_indices]
-stress_test = stress_array[test_indices]
-
-# Output information
-print(f"Total structures: {n_samples}")
-print(f"Training set: {len(atoms_train)} structures")
-print(f"Testing set: {len(atoms_test)} structures")

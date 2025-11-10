@@ -17,23 +17,18 @@ def check_converged(content: str) -> bool:
     """
     return "OPT END - CONVERGED" in content
 
-def generate_slurm_file(file_names_list, project_code='e05-algor-smw',hours=24):
-
-    if hours > 24:
-        qos = 'long'
-    else:
-        qos = 'standard'
+def generate_slurm_file(file_names_list, project_code='e05-algor-smw'):
 
     bash_script = [
     '#!/bin/bash\n',
     f'#SBATCH --nodes={len(file_names_list)}\n',
     '#SBATCH --ntasks-per-node=128\n',
     '#SBATCH --cpus-per-task=1\n',
-    f'#SBATCH --time={hours}:00:00\n',
+    '#SBATCH --time=24:00:00\n\n',
     '# Replace [budget code] below with your full project code\n',
     f'#SBATCH --account={project_code}\n',
     '#SBATCH --partition=standard\n',
-    f'#SBATCH --qos={qos}\n',
+    '#SBATCH --qos=standard\n',
     '#SBATCH --export=none\n\n',
     'module load epcc-job-env\n',
     'module load other-software\n',
@@ -43,9 +38,9 @@ def generate_slurm_file(file_names_list, project_code='e05-algor-smw',hours=24):
     'export SLURM_CPU_FREQ_REQ=2250000\n\n',
     '# Run calculations\n'
 ]
-    minutes = hours*60-3
+
     for file in file_names_list:
-        bash_script.append(f'timeout {minutes}m /work/e05/e05/bcamino/runCRYSTAL/Pcry_slurm_multi {file[:-4]} &\n')
+        bash_script.append(f'timeout 1430m /work/e05/e05/bcamino/runCRYSTAL/Pcry_slurm_multi {file[:-4]} &\n')
 
     bash_script.append('wait')
 

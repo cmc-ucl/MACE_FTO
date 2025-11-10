@@ -21,7 +21,7 @@ def build_symmetry_equivalent_configurations(atom_indices,N_index):
     
     return unique_configurations
 
-def generate_random_structures(initial_structure,atom_indices,N_atoms,new_species,N_config,DFT_config,active_sites=False,return_multiplicity=False):
+def generate_random_structures(initial_structure,atom_indices,N_atoms,new_species,N_config,DFT_config,active_sites=False,return_multiplicity=False,seed=None):
     
     #N_atoms: number of sites to replace
     #N_config: number of attempts
@@ -32,8 +32,9 @@ def generate_random_structures(initial_structure,atom_indices,N_atoms,new_specie
     #Returns: symmetry independent structures
 
     all_structures = []
-
-    
+    if seed is not None:
+        np.random.seed(seed)
+        
     if active_sites is False:
         num_sites = initial_structure.num_sites
         active_sites = np.arange(num_sites)
